@@ -3,13 +3,14 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Camera Test</title>
+    <title>Camera + Location + Heading</title>
     <style>
         /* ページ全体を黒背景に、余白ゼロで表示 */
         html, body {
             margin: 0;
             height: 100%;
             background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, Roboto, Arial, "Hiragino Kaku Gothic ProN", Meiryo;
         }
         /* カメラ映像を画面いっぱいに広げる */
         video {
@@ -18,6 +19,8 @@
             width: 100%;
             height: 100%;
             object-fit: cover; /* 画面比率を保ちながら拡大表示 */
+            /* 背面カメラの自然な向きで使うなら左右反転は不要
+         必要に応じて以下を有効化: transform: scaleX(-1); */
         }
         /* スタートボタンを画面下に配置 */
         #start {
@@ -31,25 +34,61 @@
             background: rgba(0,0,0,0.6);
             color: #fff;
             font-size: 16px;
+            z-index: 3;
         }
         /* 状態メッセージを画面上に表示 */
         #status {
             position: absolute;
             top: 10px;
             left: 10px;
+            right: 10px; /* 長文でも折り返せるよう余白を確保 */
             color: #fff;
             font-size: 14px;
             text-shadow: 0 1px 3px #000;
+            z-index: 3;
+        }
+        /* ★追加: HUD（現在地と方位の表示枠） */
+        #hud {
+            position: absolute;
+            right: 10px;
+            bottom: 80px; /* スタートボタンに被らない位置 */
+            background: rgba(0,0,0,0.5);
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            backdrop-filter: blur(4px);
+            z-index: 3;
+            min-width: 220px;
+        }
+
+            #hud b {
+                font-variant-numeric: tabular-nums;
+            }
+        /* 数字を揃えて見やすく */
+        .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
         }
     </style>
 </head>
 <body>
     <!-- カメラ映像を表示する領域 -->
     <video id="cam" playsinline muted autoplay></video>
-    <!-- カメラ起動ボタン -->
-    <button id="start">カメラON</button>
+    <!-- カメラ起動＋センサー/位置許可ボタン（★更新: 機能をまとめて起動） -->
+    <button id="start">START</button>
     <!-- 状態表示用テキスト -->
-    <div id="status">HTTPSで開いて「カメラON」を押してください。</div>
+    <div id="status">HTTPSで開いて「START」を押してください。（権限ダイアログが出ます）</div>
+
+    <!-- ★追加: 現在地＆方位の表示用HUD -->
+    <div id="hud" hidden>
+        <div class="row"><span>緯度</span><b id="lat">—</b></div>
+        <div class="row"><span>経度</span><b id="lon">—</b></div>
+        <div class="row"><span>方位(°)</span><b id="headDeg">—</b></div>
+        <div class="row"><span>方位(方角)</span><b id="headCard">—</b></div>
+    </div>
 
     <script>
         // DOM要素を取得
@@ -57,31 +96,138 @@
         const btn = document.getElementById('start');
         const statusEl = document.getElementById('status');
 
+        // ★追加: HUD内の各フィールド参照
+        const hud = document.getElementById('hud');
+        const latEl = document.getElementById('lat');
+        const lonEl = document.getElementById('lon');
+        const headDegEl = document.getElementById('headDeg');
+        const headCardEl = document.getElementById('headCard');
+
+        // 状態を保持する変数（★更新: 位置・方位を追加）
+        let streamRef = null;  // カメラ停止など将来的に扱うときの参照
+        let hasLocation = false;
+        let headingDeg = null; // 0〜360（北=0°, 時計回り）
+        let lastAlpha = null;  // デバッグ用（必要なら使う）
+
         // 状態を更新する関数
         function setStatus(msg) {
             statusEl.textContent = msg;
         }
 
-        // カメラを起動する処理
-        async function startCamera() {
-            try {
-                // getUserMediaでカメラ映像を取得
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: 'environment' } }, // 背面カメラを優先
-                    audio: false // 音声は不要
-                });
-                // 取得した映像をvideo要素に流し込む
-                video.srcObject = stream;
-                await video.play();
-                setStatus("カメラが起動しました！");
-            } catch (e) {
-                console.error(e);
-                setStatus("カメラの起動に失敗しました。権限やHTTPSを確認してください。");
-            }
+        // ★追加: 角度のユーティリティ
+        const toDeg = r => r * 180 / Math.PI;
+        const toRad = d => d * Math.PI / 180;
+        const norm360 = x => (x % 360 + 360) % 360;
+
+        // ★追加: 方位(度) → 方角(8方位/16方位)に変換（簡易）
+        function degToCardinal(d) {
+            // 16方位（22.5°刻み）で丸める。用途により 8方位にしてもOK
+            const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+            const ix = Math.round(norm360(d) / 22.5) % 16;
+            return dirs[ix];
         }
 
-        // ボタンが押されたらカメラを起動
-        btn.addEventListener('click', startCamera);
+        // カメラを起動する処理（前回から流用）
+        async function startCamera() {
+            // iOSの自動再生制約: muted + playsinline + ユーザー操作起点 を満たしている前提
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: 'environment' } }, // 背面カメラを優先
+                audio: false // 音声は不要
+            });
+            video.srcObject = stream;
+            streamRef = stream;
+            await video.play();
+        }
+
+        // ★追加: 端末の方位センサーの購読を開始（iOSは要許可）
+        async function startOrientation() {
+            // iOS 13+ では DeviceOrientationEvent.requestPermission() が存在し、
+            // 必ず「ユーザー操作起点」で呼び出して許可を得る必要がある。
+            if (typeof DeviceOrientationEvent !== "undefined" &&
+                typeof DeviceOrientationEvent.requestPermission === "function") {
+                const resp = await DeviceOrientationEvent.requestPermission();
+                if (resp !== "granted") {
+                    throw new Error("方位センサーへのアクセスが拒否されました。設定 > Safari > モーションと方位へのアクセス を確認。");
+                }
+            }
+            // 許可済み or Android/PC等はそのまま購読
+            window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+        }
+
+        // ★追加: deviceorientationイベントハンドラ
+        function onDeviceOrientation(e) {
+            // iOS Safariは webkitCompassHeading（真北基準）を持つことが多い。あれば優先。
+            let heading = null;
+            if (typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
+                heading = e.webkitCompassHeading; // 北=0°, 時計回り
+            } else if (typeof e.alpha === "number") {
+                // e.alpha: デバイスのz軸回りの回転角（0〜360）
+                // ただし「画面の向き（縦/横）」で見かけの方位がずれるため補正が必要。
+                let screenAngle = 0;
+                if (screen.orientation && typeof screen.orientation.angle === "number") {
+                    screenAngle = screen.orientation.angle; // 0, 90, 180, 270（時計回り）
+                } else if (typeof window.orientation === "number") {
+                    // 古いiOS向けフォールバック
+                    screenAngle = window.orientation;
+                }
+                // 多くの実装例に倣い、概算として 360 - alpha + 画面回転角 で補正
+                heading = norm360(360 - e.alpha + screenAngle);
+                lastAlpha = e.alpha;
+            }
+            if (heading == null || isNaN(heading)) return;
+
+            // 状態とHUD表示を更新
+            headingDeg = heading;
+            headDegEl.textContent = headingDeg.toFixed(0) + "°";
+            headCardEl.textContent = degToCardinal(headingDeg);
+            hud.hidden = false; // 一度でも値が取れたら表示
+        }
+
+        // ★追加: 現在地（緯度・経度）を1回取得してHUDに表示
+        function fetchLocationOnce() {
+            if (!("geolocation" in navigator)) {
+                throw new Error("このブラウザは位置情報APIに対応していません。");
+            }
+            return new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        const { latitude, longitude } = pos.coords;
+                        latEl.textContent = latitude.toFixed(6);
+                        lonEl.textContent = longitude.toFixed(6);
+                        hasLocation = true;
+                        hud.hidden = false; // 位置だけでも表示
+                        resolve();
+                    },
+                    err => {
+                        reject(new Error("位置情報の取得に失敗しました。権限や位置サービスを確認してください。(" + err.code + ")"));
+                    },
+                    {
+                        enableHighAccuracy: true, // できるだけ高精度
+                        timeout: 10000,           // 10秒でタイムアウト
+                        maximumAge: 0             // キャッシュを使わない
+                    }
+                );
+            });
+        }
+
+        // ボタンが押されたら「カメラ→方位→現在地」の順に試す（★更新）
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                setStatus("カメラ起動中…（許可が出たらOKを押してください）");
+                await startCamera();
+                setStatus("カメラOK。方位センサー許可ダイアログへ…");
+                await startOrientation();
+                setStatus("方位センサーOK。現在地を取得中…");
+                await fetchLocationOnce();
+                setStatus("準備完了：画面のHUDに現在地と方位が表示されています。");
+            } catch (e) {
+                console.error(e);
+                setStatus(e.message || "権限またはHTTPSを確認してください。");
+                btn.disabled = false; // 再トライできるように戻す
+            }
+        });
     </script>
 </body>
 </html>
