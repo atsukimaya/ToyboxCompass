@@ -3,147 +3,195 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Camera + Location + Heading</title>
+    <title>Santa AR: Always Show Label</title>
     <style>
-        /* ページ全体を黒背景に、余白ゼロで表示 */
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #000;
-            font-family: -apple-system, BlinkMacSystemFont, Roboto, Arial, "Hiragino Kaku Gothic ProN", Meiryo;
-        }
-        /* カメラ映像を画面いっぱいに広げる */
-        video {
-            position: absolute;
-            inset: 0; /* 上下左右を0に固定 */
-            width: 100%;
-            height: 100%;
-            object-fit: cover; /* 画面比率を保ちながら拡大表示 */
-            /* 背面カメラの自然な向きで使うなら左右反転は不要
-         必要に応じて以下を有効化: transform: scaleX(-1); */
-        }
-        /* スタートボタンを画面下に配置 */
-        #start {
-            position: absolute;
-            left: 50%;
-            bottom: 24px;
-            transform: translateX(-50%);
-            padding: 12px 16px;
-            border-radius: 10px;
-            border: none;
-            background: rgba(0,0,0,0.6);
-            color: #fff;
-            font-size: 16px;
-            z-index: 3;
-        }
-        /* 状態メッセージを画面上に表示 */
-        #status {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            right: 10px; /* 長文でも折り返せるよう余白を確保 */
-            color: #fff;
-            font-size: 14px;
-            text-shadow: 0 1px 3px #000;
-            z-index: 3;
-        }
-        /* ★追加: HUD（現在地と方位の表示枠） */
-        #hud {
-            position: absolute;
-            right: 10px;
-            bottom: 80px; /* スタートボタンに被らない位置 */
-            background: rgba(0,0,0,0.5);
-            color: #fff;
-            padding: 10px 12px;
-            border-radius: 12px;
-            font-size: 14px;
-            line-height: 1.5;
-            backdrop-filter: blur(4px);
-            z-index: 3;
-            min-width: 220px;
-        }
-
-            #hud b {
-                font-variant-numeric: tabular-nums;
+            /* ページ全体設定 */
+            html, body {
+                margin: 0;
+                height: 100%;
+                background: #000;
+                font-family: -apple-system, BlinkMacSystemFont, Roboto, Arial, "Hiragino Kaku Gothic ProN", Meiryo;
             }
-        /* 数字を揃えて見やすく */
-        .row {
-            display: flex;
-            justify-content: space-between;
-            gap: 8px;
-        }
+            /* カメラ映像を画面いっぱいに表示 */
+            video {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                /* 背面カメラの自然な向きで使うなら左右反転は不要。
+             必要に応じて次行を有効化: transform: scaleX(-1); */
+            }
+            /* STARTボタン（権限取得の起点） */
+            #start {
+                position: absolute;
+                left: 50%;
+                bottom: 24px;
+                transform: translateX(-50%);
+                padding: 12px 16px;
+                border-radius: 10px;
+                border: none;
+                background: rgba(0,0,0,0.6);
+                color: #fff;
+                font-size: 16px;
+                z-index: 3;
+            }
+            /* 状態メッセージ */
+            #status {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                right: 10px; /* 長文でも折り返せるよう余白を確保 */
+                color: #fff;
+                font-size: 14px;
+                text-shadow: 0 1px 3px #000;
+                z-index: 3;
+            }
+            /* HUD（現在地・方位など） */
+            #hud {
+                position: absolute;
+                right: 10px;
+                bottom: 80px; /* STARTボタンに被らない位置 */
+                background: rgba(0,0,0,0.5);
+                color: #fff;
+                padding: 10px 12px;
+                border-radius: 12px;
+                font-size: 14px;
+                line-height: 1.5;
+                backdrop-filter: blur(4px);
+                z-index: 3;
+                min-width: 240px;
+            }
+
+                #hud b {
+                    font-variant-numeric: tabular-nums;
+                }
+
+            .row {
+                display: flex;
+                justify-content: space-between;
+                gap: 8px;
+            }
+
+            /* ARラベル（中央に常時表示） */
+            #label {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%,-50%);
+                color: #fff;
+                font-weight: 900;
+                font-size: clamp(28px, 7vw, 64px);
+                text-shadow: 0 2px 12px rgba(0,0,0,.6), 0 0 40px rgba(255,0,64,.6);
+                white-space: nowrap;
+                pointer-events: none;
+                /* ★変更: 以前は opacity:0 + .show で条件一致時のみ表示だったが、
+             今回は「常時表示」にするため最初から不透明にする */
+                opacity: 1;
+                z-index: 3;
+            }
+            /* ★削除: .show クラスは使わないため残しても動作はするが不要
+        #label.show { opacity: 1; }
+        */
     </style>
 </head>
 <body>
-    <!-- カメラ映像を表示する領域 -->
+    <!-- カメラ映像 -->
     <video id="cam" playsinline muted autoplay></video>
-    <!-- カメラ起動＋センサー/位置許可ボタン（★更新: 機能をまとめて起動） -->
+
+    <!-- ★変更: ラベルは常時表示（CSSのopacity:1で常に見える） -->
+    <div id="label">santa is here</div>
+
+    <!-- 起動ボタン -->
     <button id="start">START</button>
-    <!-- 状態表示用テキスト -->
+
+    <!-- 状態表示 -->
     <div id="status">HTTPSで開いて「START」を押してください。（権限ダイアログが出ます）</div>
 
-    <!-- ★追加: 現在地＆方位の表示用HUD -->
+    <!-- HUD（デバッグ/確認用。必要なければ非表示のままでもOK）-->
     <div id="hud" hidden>
         <div class="row"><span>緯度</span><b id="lat">—</b></div>
         <div class="row"><span>経度</span><b id="lon">—</b></div>
         <div class="row"><span>方位(°)</span><b id="headDeg">—</b></div>
         <div class="row"><span>方位(方角)</span><b id="headCard">—</b></div>
+        <div class="row"><span>サンタ方角(°)</span><b id="santaBear">—</b></div>
+        <div class="row"><span>誤差(°)</span><b id="diffDeg">—</b></div>
+        <div class="row"><span>距離(km)</span><b id="distKm">—</b></div>
     </div>
 
     <script>
-        // DOM要素を取得
+        // =========== 基本のDOM参照 ===========
         const video = document.getElementById('cam');
         const btn = document.getElementById('start');
         const statusEl = document.getElementById('status');
 
-        // ★追加: HUD内の各フィールド参照
+        // HUD要素
         const hud = document.getElementById('hud');
         const latEl = document.getElementById('lat');
         const lonEl = document.getElementById('lon');
         const headDegEl = document.getElementById('headDeg');
         const headCardEl = document.getElementById('headCard');
+        const santaBearEl = document.getElementById('santaBear');
+        const diffDegEl = document.getElementById('diffDeg');
+        const distKmEl = document.getElementById('distKm');
 
-        // 状態を保持する変数（★更新: 位置・方位を追加）
-        let streamRef = null;  // カメラ停止など将来的に扱うときの参照
+        // サンタクロース村（ロヴァニエミ）の座標（参考：計算・HUD表示用）
+        const SANTA = { lat: 66.543, lon: 25.847 };
+
+        // 状態
+        let streamRef = null;
         let hasLocation = false;
-        let headingDeg = null; // 0〜360（北=0°, 時計回り）
-        let lastAlpha = null;  // デバッグ用（必要なら使う）
+        let headingDeg = null;       // 端末方位（0〜360）
+        let santaBearing = null;     // 現在地→サンタ村の方角（0〜360）
+        let santaDistanceKm = null;  // 距離（km）
 
-        // 状態を更新する関数
-        function setStatus(msg) {
-            statusEl.textContent = msg;
-        }
+        function setStatus(msg) { statusEl.textContent = msg; }
 
-        // ★追加: 角度のユーティリティ
-        const toDeg = r => r * 180 / Math.PI;
-        const toRad = d => d * Math.PI / 180;
+        // =========== 角度・地理ユーティリティ ===========
         const norm360 = x => (x % 360 + 360) % 360;
+        const toRad = d => d * Math.PI / 180;
+        const toDeg = r => r * 180 / Math.PI;
 
-        // ★追加: 方位(度) → 方角(8方位/16方位)に変換（簡易）
         function degToCardinal(d) {
-            // 16方位（22.5°刻み）で丸める。用途により 8方位にしてもOK
             const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
                 "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
             const ix = Math.round(norm360(d) / 22.5) % 16;
             return dirs[ix];
         }
+        function bearingBetween(lat1, lon1, lat2, lon2) {
+            const f1 = toRad(lat1), f2 = toRad(lat2), dl = toRad(lon2 - lon1);
+            const y = Math.sin(dl) * Math.cos(f2);
+            const x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+            return norm360(toDeg(Math.atan2(y, x)));
+        }
+        function haversineKm(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(a));
+        }
+        function shortestDiff(a, b) {
+            let d = norm360(a) - norm360(b);
+            if (d > 180) d -= 360;
+            if (d < -180) d += 360;
+            return d;
+        }
 
-        // カメラを起動する処理（前回から流用）
+        // =========== カメラ起動 ===========
         async function startCamera() {
-            // iOSの自動再生制約: muted + playsinline + ユーザー操作起点 を満たしている前提
+            // iOSの自動再生制約: muted + playsinline + ボタントリガーを満たす前提
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: 'environment' } }, // 背面カメラを優先
-                audio: false // 音声は不要
+                video: { facingMode: { ideal: 'environment' } }, // 背面カメラ優先
+                audio: false
             });
             video.srcObject = stream;
             streamRef = stream;
             await video.play();
         }
 
-        // ★追加: 端末の方位センサーの購読を開始（iOSは要許可）
+        // =========== 方位センサー購読（iOSは許可が必要） ===========
         async function startOrientation() {
-            // iOS 13+ では DeviceOrientationEvent.requestPermission() が存在し、
-            // 必ず「ユーザー操作起点」で呼び出して許可を得る必要がある。
             if (typeof DeviceOrientationEvent !== "undefined" &&
                 typeof DeviceOrientationEvent.requestPermission === "function") {
                 const resp = await DeviceOrientationEvent.requestPermission();
@@ -151,83 +199,43 @@
                     throw new Error("方位センサーへのアクセスが拒否されました。設定 > Safari > モーションと方位へのアクセス を確認。");
                 }
             }
-            // 許可済み or Android/PC等はそのまま購読
             window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
         }
 
-        // ★追加: deviceorientationイベントハンドラ
         function onDeviceOrientation(e) {
-            // iOS Safariは webkitCompassHeading（真北基準）を持つことが多い。あれば優先。
-            let heading = null;
+            let h = null;
             if (typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
-                heading = e.webkitCompassHeading; // 北=0°, 時計回り
+                // iOSの真北基準ヘディング（北=0°）
+                h = e.webkitCompassHeading;
             } else if (typeof e.alpha === "number") {
-                // e.alpha: デバイスのz軸回りの回転角（0〜360）
-                // ただし「画面の向き（縦/横）」で見かけの方位がずれるため補正が必要。
+                // 画面の回転角で補正して概算
                 let screenAngle = 0;
                 if (screen.orientation && typeof screen.orientation.angle === "number") {
-                    screenAngle = screen.orientation.angle; // 0, 90, 180, 270（時計回り）
+                    screenAngle = screen.orientation.angle; // 0/90/180/270
                 } else if (typeof window.orientation === "number") {
-                    // 古いiOS向けフォールバック
                     screenAngle = window.orientation;
                 }
-                // 多くの実装例に倣い、概算として 360 - alpha + 画面回転角 で補正
-                heading = norm360(360 - e.alpha + screenAngle);
-                lastAlpha = e.alpha;
+                h = norm360(360 - e.alpha + screenAngle);
             }
-            if (heading == null || isNaN(heading)) return;
+            if (h == null || isNaN(h)) return;
 
-            // 状態とHUD表示を更新
-            headingDeg = heading;
+            // HUD更新（方位）
+            headingDeg = h;
             headDegEl.textContent = headingDeg.toFixed(0) + "°";
             headCardEl.textContent = degToCardinal(headingDeg);
-            hud.hidden = false; // 一度でも値が取れたら表示
+            hud.hidden = false;
+
+            // ★変更: ここでは「サンタ方向かどうか」による表示切替を行わない。
+            // 以前は diff を計算し、±しきい値で label.classList.add('show') していたが、
+            // 今回はラベルを常時表示にしたためトグル処理は削除。
+            if (hasLocation && typeof santaBearing === "number") {
+                const diff = Math.abs(shortestDiff(headingDeg, santaBearing));
+                diffDegEl.textContent = diff.toFixed(0); // 参考値としてHUDに誤差だけ表示
+                // ★削除: if (diff <= THRESHOLD) { … } の分岐は不要
+            }
         }
 
-        // ★追加: 現在地（緯度・経度）を1回取得してHUDに表示
+        // =========== 現在地取得 ===========
         function fetchLocationOnce() {
             if (!("geolocation" in navigator)) {
-                throw new Error("このブラウザは位置情報APIに対応していません。");
-            }
-            return new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(
-                    pos => {
-                        const { latitude, longitude } = pos.coords;
-                        latEl.textContent = latitude.toFixed(6);
-                        lonEl.textContent = longitude.toFixed(6);
-                        hasLocation = true;
-                        hud.hidden = false; // 位置だけでも表示
-                        resolve();
-                    },
-                    err => {
-                        reject(new Error("位置情報の取得に失敗しました。権限や位置サービスを確認してください。(" + err.code + ")"));
-                    },
-                    {
-                        enableHighAccuracy: true, // できるだけ高精度
-                        timeout: 10000,           // 10秒でタイムアウト
-                        maximumAge: 0             // キャッシュを使わない
-                    }
-                );
-            });
-        }
-
-        // ボタンが押されたら「カメラ→方位→現在地」の順に試す（★更新）
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            try {
-                setStatus("カメラ起動中…（許可が出たらOKを押してください）");
-                await startCamera();
-                setStatus("カメラOK。方位センサー許可ダイアログへ…");
-                await startOrientation();
-                setStatus("方位センサーOK。現在地を取得中…");
-                await fetchLocationOnce();
-                setStatus("準備完了：画面のHUDに現在地と方位が表示されています。");
-            } catch (e) {
-                console.error(e);
-                setStatus(e.message || "権限またはHTTPSを確認してください。");
-                btn.disabled = false; // 再トライできるように戻す
-            }
-        });
-    </script>
-</body>
-</html>
+                throw new Error("このブラウザは位置情報A
