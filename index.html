@@ -2,96 +2,123 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>太陽の位置に球体を配置</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- A-Frame -->
+    <title>A-Frame: 真北に固定された球体（平面認識なし）</title>
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #000;
-            overflow: hidden;
-        }
-        /* カメラ背景用のビデオ */
-        #bgcam {
+        /* iOSではセンサー許可にユーザー操作が必要なので最小ボタンを用意 */
+        #start {
             position: fixed;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: 0;
-        }
-        /* A-Frameのキャンバスは前面に */
-        a-scene {
-            position: fixed;
-            inset: 0;
-            z-index: 1;
+            inset: 12px auto auto 12px;
+            padding: .6em .9em;
+            border-radius: 10px;
+            background: rgba(0,0,0,.6);
+            color: #fff;
+            border: 0;
+            font: 14px/1.2 system-ui, sans-serif;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
-    <!-- 背景カメラ映像 -->
-    <video id="bgcam" autoplay playsinline muted></video>
+    <button id="start">センサー開始</button>
 
-    <!-- A-Frameシーン -->
-    <a-scene renderer="alpha:true" embedded>
-        <!-- カメラ（3D空間の視点） -->
-        <a-entity camera wasd-controls="enabled:false"></a-entity>
+    <!-- AR風。カメラ映像の上に3Dを重ねる（hit-test等は使わない） -->
+    <a-scene renderer="alpha: true; physicallyCorrectLights: true"
+             vr-mode-ui="enabled: false"
+             embedded>
+        <a-entity light="type: ambient; intensity: 1"></a-entity>
 
-        
-        <!-- 適当な位置に球体を配置 -->
-        <!--<a-sphere position="0 1 -2" radius="0.3" color="#44ccff"
-                  material="emissive:#22aaff; emissiveIntensity:0.6"></a-sphere>-->
-        
+        <!-- カメラ本体。位置はデバイスの実移動に追従、回転も端末姿勢に追従 -->
+        <a-entity id="rig">
+            <a-camera id="cam"></a-camera>
+        </a-entity>
 
-        <!-- 太陽の位置に置く球体（JSでpositionを計算して設定する） -->
-        <a-sphere id="sun"  position="0 1 -2" radius="0.3" color="#ffaa00"
-                  material="emissive:#ff8800; emissiveIntensity:0.7"></a-sphere>
-
-
-        <!-- 簡単なライト -->
-        <a-entity light="type: ambient; intensity: 0.5"></a-entity>
-        <a-entity light="type: directional; intensity: 0.8" position="1 1 0"></a-entity>
-
+        <!-- 真北方向“のみ”に存在する球体（ワールド固定のつもりで扱う） -->
+        <!-- ※ 位置はJSで毎フレーム: 「カメラの現在位置 + 北方向ベクトル*d」へ更新 -->
+        <a-entity id="northSphere"
+                  geometry="primitive: sphere; radius: 0.14"
+                  material="color: #4fc3f7; metalness: 0.1; roughness: 0.4">
+        </a-entity>
     </a-scene>
 
     <script>
-        // カメラ起動（iPhone Safari/Chromeでも動作する）
-        (async () => {
+        // 目的：
+        // ・球体は「常に真北方向の d 先」に存在（世界に固定）させる
+        // ・ユーザーが北を向いた時だけ視界に入る（他の方角では見えない）
+        // 実装方針：
+        // 1) コンパスの見出し headingDeg(北=0°) を取得
+        // 2) そのベクトル N = (sin(-heading), 0, -cos(-heading)) を「ワールドの北向き」とみなす
+        // 3) 毎フレーム、カメラのワールド位置 C を取得し、球体位置 P = C + N * d に設定
+        //    → これで球体は常に「現在位置から見た真北 d m先」に“固定”される
+        // 4) 画面を向けていなければ視界外なので見えない。北を向くと見える
+
+        const startBtn = document.getElementById('start');
+        const camEl = document.getElementById('cam');
+        const sphereEl = document.getElementById('northSphere');
+
+        let headingDeg = null;   // コンパスの真方位（北=0°, 東=90°）
+        const distance = 2.0;    // 真北に固定する距離（m）
+        const heightOffset = 0.0;// 視点からの高さ差（m） 0で目線付近に固定
+
+        // --- センサー許可（iOS） ---
+        startBtn.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: "environment" } }, audio: false
-                });
-                document.getElementById('bgcam').srcObject = stream;
-            } catch (e) {
-                alert("カメラが起動できません: " + e.message);
-            }
-        })();
+                if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    const state = await DeviceOrientationEvent.requestPermission();
+                    if (state !== 'granted') {
+                        alert('方位センサーの許可が必要です。設定から許可してください。');
+                        return;
+                    }
+                }
+            } catch (e) { /* Android等はそのまま続行 */ }
+            startCompass();
+            startBtn.style.display = 'none';
+        });
 
-        // 太陽の高度と方位（度）
-        const altDeg = 45.7;
-        const azDeg = 236;
+        // iOS以外は自動開始を試みる
+        if (!(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function')) {
+            startCompass();
+            startBtn.style.display = 'none';
+        }
 
-        // ラジアンに変換
-        const alt = altDeg * Math.PI / 180;
-        const az = azDeg * Math.PI / 180;
+        function startCompass() {
+            // 方位イベント購読（iOSは webkitCompassHeading が真方位のことが多い）
+            window.addEventListener('deviceorientation', (e) => {
+                let h = null;
+                if (typeof e.webkitCompassHeading === 'number') {
+                    h = e.webkitCompassHeading;     // 0..360, 北=0
+                } else if (typeof e.alpha === 'number') {
+                    // αは実装依存（多くはデバイス座標基準）。北基準へ近似的に変換
+                    h = 360 - e.alpha;              // ざっくり真方位に寄せる
+                }
+                if (h != null) headingDeg = ((h % 360) + 360) % 360;
+            }, { passive: true });
 
-        // 表示する距離（例：5m先）
-        const R = 5;
+            // 毎フレーム更新：球体を「カメラ位置 + 北ベクトル * d」に再配置
+            const update = () => {
+                if (headingDeg != null) {
+                    // 北ベクトル（カメラの回転には関わらず“地理的な北”に揃える）
+                    const rad = (-headingDeg) * Math.PI / 180;
+                    const nx = Math.sin(rad);
+                    const nz = -Math.cos(rad);
 
-        // 東(X), 上(Y), 北(Z) 成分を計算
-        const x = Math.cos(alt) * Math.sin(az) * R;
-        const y = Math.sin(alt) * R;
-        const z = Math.cos(alt) * Math.cos(az) * R;
+                    // カメラの“ワールド位置”を取得
+                    const camObj = camEl.object3D;
+                    const camWorldPos = new THREE.Vector3();
+                    camObj.getWorldPosition(camWorldPos);
 
-        // 球体のpositionをセット
-        document.getElementById('sun')
-            .setAttribute('position', `${x} ${y} ${z}`);
+                    // 球体の“ワールド位置”を決定（真北 d m 先 + 高さ補正）
+                    const px = camWorldPos.x + nx * distance;
+                    const py = camWorldPos.y + heightOffset;
+                    const pz = camWorldPos.z + nz * distance;
 
-        //chromeのコンソールに表示
-        console.log("太陽の座標:", x, y, z);
-
+                    sphereEl.object3D.position.set(px, py, pz);
+                }
+                requestAnimationFrame(update);
+            };
+            update();
+        }
     </script>
 </body>
 </html>
