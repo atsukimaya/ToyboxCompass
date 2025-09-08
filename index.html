@@ -1,152 +1,254 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>WebAR 太陽の位置</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>WebXR: 太陽方向に3D固定</title>
     <style>
         html, body {
             margin: 0;
             height: 100%;
             background: #000;
         }
-        /* カメラ映像を全画面に敷く */
-        #camera {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1); /* 左右反転 → 自撮りのように見やすくする */
+
+        .overlay {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            padding: 10px;
+            pointer-events: none;
         }
-        /* 太陽マーク（☀︎） */
-        #sun {
-            position: absolute;
-            font-size: 40px;
-            color: yellow;
-            text-shadow: 0 0 10px rgba(255,255,0,0.8);
-            transform: translate(-50%,-50%); /* 中心合わせ */
-            pointer-events: none; /* タップ操作を邪魔しない */
+
+        .btn {
+            pointer-events: auto;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: none;
+            font-weight: 700;
+            box-shadow: 0 6px 20px rgba(0,0,0,.25);
         }
-        /* iOSで方位の許可が必要な場合に出すボタン */
-        #permBtn {
-            position: absolute;
+
+        #perm {
+            background: #fff;
+            color: #111;
+        }
+
+        #note {
+            position: fixed;
             left: 50%;
-            bottom: 20px;
+            top: 12px;
             transform: translateX(-50%);
-            padding: 10px 16px;
-            font-size: 14px;
-            border-radius: 8px;
+            background: rgba(0,0,0,.45);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            backdrop-filter: blur(6px);
         }
     </style>
-    <!-- 太陽の位置を計算するためのライブラリ SunCalc -->
+    <!-- 3D表示用 Three.js (WebXR対応ビルド) -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js"></script>
+    <!-- 太陽位置計算 SunCalc -->
     <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
 </head>
 <body>
-    <!-- カメラ映像 -->
-    <video id="camera" autoplay playsinline muted></video>
-    <!-- 太陽マーク -->
-    <div id="sun">☀︎</div>
-    <!-- iOS Safari 用の許可ボタン -->
-    <button id="permBtn" style="display:none;">方位の取得を許可する</button>
+    <div id="note">AR開始 → 端末をゆっくり左右に振って初期校正してください</div>
+    <div class="overlay">
+        <!-- iOSの方位許可（Androidは基本不要） -->
+        <button id="perm" class="btn" style="display:none;">方位の取得を許可</button>
+    </div>
 
     <script>
-        const sunEl = document.getElementById('sun');
-        const permBtn = document.getElementById('permBtn');
-        const state = { lat: null, lon: null, heading: null }; // 位置と端末の向きを保存
+        /*
+          目的：
+            - WebXR(immersive-ar)でカメラ実映像の上に3Dオブジェクトを描画
+            - 現在地＆現在時刻から SunCalc で太陽の方位(az)・高度(alt)を算出
+            - セッション開始時のコンパス方位を用いて「XRワールドの+Z = 真北」に合わせる
+            - ENU(東x, 北y? ではなくここでは right-handed: X=東, Y=上, Z=北)に基づく太陽方向ベクトルを作り、
+              その方向の遠方（例 D=200m）にオブジェクトを配置 → 見かけ上“空のその方向”に固定
 
-        // ===== カメラ起動 =====
-        async function startCamera() {
-            // 環境カメラ（背面カメラ）を優先的に使用
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" }
-            });
-            document.getElementById('camera').srcObject = stream;
+          注意：
+            - WebXRは基本 Android Chrome。iOS Safari は（2025/09 現在）WebXR未対応のため動作しません。
+            - コンパスは環境ノイズでズレます。8の字キャリブレーション推奨。
+        */
+
+        let renderer, scene, camera;
+        let world;        // 「世界基準」を入れるルート。北合わせの回転をここに与える。
+        let sunObj;       // 太陽マーカー（3D）
+        let haveHeading = false;
+        let currentHeadingDeg = null;     // デバイスの“真北=0°”の方位
+        let headingAtStartDeg = null;     // セッション開始時に取得した方位（これを基準に北合わせ）
+        let lat = null, lon = null;       // 現在地
+        const DIST_M = 200;               // 太陽オブジェクトを置く仮想距離（大きくするほどパララックスが減る）
+
+        // --- コンパス許可（iOS向け）ボタンの有無判定 ---
+        const permBtn = document.getElementById('perm');
+        const needPerm = typeof DeviceOrientationEvent !== 'undefined'
+            && typeof DeviceOrientationEvent.requestPermission === 'function';
+        if (needPerm) permBtn.style.display = 'block';
+        permBtn.onclick = async () => {
+            try {
+                const resp = await DeviceOrientationEvent.requestPermission();
+                if (resp === 'granted') {
+                    permBtn.style.display = 'none';
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                }
+            } catch (e) {
+                alert('方位の許可に失敗: ' + e.message);
+            }
+        };
+
+        // Android等はそのまま取得
+        if (!needPerm && typeof DeviceOrientationEvent !== 'undefined') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
         }
 
-        // ===== 現在地の取得 =====
+        // --- デバイス方位イベント処理 ---
+        function handleOrientation(e) {
+            // iOS Safari: webkitCompassHeading が 北=0° 時計回り
+            if (typeof e.webkitCompassHeading === 'number') {
+                currentHeadingDeg = e.webkitCompassHeading;
+                haveHeading = true;
+            } else if (typeof e.alpha === 'number') {
+                // 多くのAndroid: alpha が北基準（ただし機種依存あり）
+                let h = 360 - e.alpha;
+                if (h < 0) h += 360;
+                currentHeadingDeg = h;
+                haveHeading = true;
+            }
+        }
+
+        // --- 位置情報 ---
         function getLocation() {
             return new Promise((res, rej) => {
+                if (!navigator.geolocation) return rej(new Error('Geolocation未対応'));
                 navigator.geolocation.getCurrentPosition(p => {
-                    state.lat = p.coords.latitude;   // 緯度
-                    state.lon = p.coords.longitude;  // 経度
+                    lat = p.coords.latitude;
+                    lon = p.coords.longitude;
                     res();
-                }, rej);
+                }, rej, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
             });
         }
 
-        // ===== 太陽の位置を計算して画面に表示 =====
-        function updateSun() {
-            if (state.lat == null || state.lon == null || state.heading == null) return;
+        // --- Three.js 初期化 ---
+        function initThree() {
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
 
-            // 現在時刻の太陽位置を計算
-            const now = new Date();
-            const pos = SunCalc.getPosition(now, state.lat, state.lon);
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera();
 
-            // SunCalc の方位角は「南=0、西方向に増加」
-            // → 北=0° 東=90° の一般的な方位角に変換
-            let az = ((pos.azimuth * 180 / Math.PI) + 180) % 360;
-            az = (360 - az) % 360;
-            const alt = pos.altitude * 180 / Math.PI; // 高度（地平線0°, 天頂90°）
+            // 世界ルート：ここに「北合わせ」の回転を与える
+            world = new THREE.Group();
+            scene.add(world);
 
-            // ====== 画面座標に変換 ======
-            const w = window.innerWidth, h = window.innerHeight;
+            // 太陽マーカー（発光っぽい球）
+            const geo = new THREE.SphereGeometry(0.5, 32, 16); // 直径~1m相当
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffff66 });
+            sunObj = new THREE.Mesh(geo, mat);
+            // 遠方に置くので見やすいようスプライト的な光彩を追加（お好みで）
+            const glow = new THREE.Sprite(
+                new THREE.SpriteMaterial({ color: 0xffdd66, opacity: 0.6, depthWrite: false })
+            );
+            glow.scale.set(8, 8, 8);
+            sunObj.add(glow);
+            world.add(sunObj);
 
-            // 方位差 = 太陽の方位角 - 端末が向いている方位角
-            // 差が0°なら画面中央に表示
-            const diffAz = az - state.heading;
-
-            // 横位置: 方位差90°で画面半分ずれるように設定
-            const x = w / 2 + diffAz * (w / 90);
-
-            // 縦位置: 高度90°で画面半分上に動くように設定
-            const y = h / 2 - alt * (h / 90);
-
-            // ☀︎マークの位置を更新
-            sunEl.style.left = x + "px";
-            sunEl.style.top = y + "px";
+            window.addEventListener('resize', onResize);
         }
 
-        // ===== 端末の方位取得（コンパス） =====
-        function setupOrientation() {
-            // iOS Safari (iOS13+) ではユーザー操作による許可が必要
-            const needPerm = typeof DeviceOrientationEvent !== 'undefined' &&
-                typeof DeviceOrientationEvent.requestPermission === 'function';
-            if (needPerm) {
-                // ボタンを出してユーザーに許可を求める
-                permBtn.style.display = 'block';
-                permBtn.onclick = async () => {
-                    const resp = await DeviceOrientationEvent.requestPermission();
-                    if (resp === 'granted') {
-                        permBtn.style.display = 'none';
-                        window.addEventListener('deviceorientation', handle, true);
-                    }
+        function onResize() {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- WebXR AR開始ボタン ---
+        function startARButton() {
+            // ARButton（Three.js付属）でボタン生成
+            const btn = ARButton.createButton(renderer, {
+                requiredFeatures: ['hit-test'], // ※ヒットテスト不要でもよいが、対応端末のAR起動安定のため付けておく
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
+            });
+            document.body.appendChild(btn);
+            // セッション開始時フック
+            renderer.xr.addEventListener('sessionstart', async () => {
+                // 初期北合わせ：セッション直後の方位を保持
+                // 取得が間に合わなければ少し待つ
+                for (let i = 0; i < 20 && !haveHeading; i++) {
+                    await new Promise(r => setTimeout(r, 100));
                 }
-            } else {
-                // Android などはそのままイベント取得
-                window.addEventListener('deviceorientation', handle, true);
-            }
+                headingAtStartDeg = currentHeadingDeg ?? 0;
+
+                // 初回の太陽配置
+                placeSunByAzAlt();
+            });
         }
 
-        // デバイスの方位イベントを処理
-        function handle(e) {
-            let heading;
-            if (typeof e.webkitCompassHeading === 'number') {
-                // iOS Safari: webkitCompassHeading が 北=0° 時計回り
-                heading = e.webkitCompassHeading;
-            } else if (typeof e.alpha === 'number') {
-                // Android: alpha が北基準（0°）の場合が多い
-                heading = 360 - e.alpha;
-            }
-            state.heading = heading;
+        // --- SunCalcで太陽の方位/高度 → ENUベクトルに変換し、世界座標へ配置 ---
+        function placeSunByAzAlt() {
+            if (lat == null || lon == null) return;
+
+            const now = new Date();
+            const sp = SunCalc.getPosition(now, lat, lon);
+            // SunCalc:
+            //   azimuth: ラジアン, 南=0, 西向き増加
+            //   altitude: ラジアン（地平線0, 天頂+）
+            // → 一般的な方位角（北=0, 東=90, 南=180, 西=270）に変換
+            let azDeg = ((sp.azimuth * 180 / Math.PI) + 180) % 360;
+            azDeg = (360 - azDeg) % 360;
+            const altDeg = sp.altitude * 180 / Math.PI;
+
+            // ENU（X=東, Y=上, Z=北）における方向ベクトル
+            // 方位=az, 高度=alt
+            const az = THREE.MathUtils.degToRad(azDeg);
+            const alt = THREE.MathUtils.degToRad(altDeg);
+            const x = Math.cos(alt) * Math.sin(az); // 東
+            const y = Math.sin(alt);                // 上
+            const z = Math.cos(alt) * Math.cos(az); // 北
+            const dirENU = new THREE.Vector3(x, y, z).normalize();
+
+            // 世界ルート(world)の回転を、初期方位に合わせる：
+            //   XRの+Zが「セッション開始時に端末が向いていた方向」と仮定される場合が多い。
+            //   これを「真北」に一致させるため、Y軸周りに -(headingAtStart) 回す。
+            //   ※ センサー誤差は残るが、空方向の“見た目固定”には十分。
+            const yaw0 = THREE.MathUtils.degToRad(headingAtStartDeg ?? 0);
+            world.rotation.set(0, -yaw0, 0);
+
+            // 太陽オブジェクトを遠方へ（パララックス低減のため ~200m）
+            const D = DIST_M;
+            const pos = dirENU.clone().multiplyScalar(D);
+            sunObj.position.copy(pos);
         }
 
-        // ===== 初期化処理 =====
-        (async function () {
-            await startCamera();     // カメラ起動
-            await getLocation();     // 現在地取得
-            setupOrientation();      // コンパスセット
-            setInterval(updateSun, 1000); // 1秒ごとに太陽位置を更新
+        // --- 毎フレーム処理：数秒ごとに太陽位置を再計算（太陽はゆっくり動く） ---
+        let lastUpdate = 0;
+        function renderLoop(ts, frame) {
+            // 5秒に1回だけ再配置
+            if (!lastUpdate || (ts - lastUpdate) > 5000) {
+                placeSunByAzAlt();
+                lastUpdate = ts;
+            }
+            renderer.render(scene, camera);
+        }
+
+        // ============ 起動フロー ============
+        (async function main() {
+            try {
+                await getLocation();          // 緯度経度
+            } catch (e) {
+                alert('位置情報が取得できません: ' + e.message);
+            }
+            initThree();                    // Three.js
+            startARButton();                // WebXR AR開始ボタン
+            renderer.setAnimationLoop(renderLoop);
         })();
     </script>
 </body>
