@@ -2,123 +2,88 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
+    <title>A-Frame WebAR | 固定位置のオレンジ球</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>A-Frame: 真北に固定された球体（平面認識なし）</title>
+    <!-- A-Frame 本体 -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <style>
-        /* iOSではセンサー許可にユーザー操作が必要なので最小ボタンを用意 */
-        #start {
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+        /* A-Frameキャンバスを全画面に。背景α透過でカメラが透ける(WebXR AR) */
+        a-scene {
             position: fixed;
-            inset: 12px auto auto 12px;
-            padding: .6em .9em;
-            border-radius: 10px;
-            background: rgba(0,0,0,.6);
+            inset: 0;
+        }
+        /* 画面上に重ねるUI（任意） */
+        #overlay {
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: 0;
+            padding: 8px 12px;
+            font: 14px/1.4 system-ui, sans-serif;
             color: #fff;
-            border: 0;
-            font: 14px/1.2 system-ui, sans-serif;
-            z-index: 10;
+            text-shadow: 0 1px 2px #0008;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <button id="start">センサー開始</button>
+    <!-- 画面上に重ねるメモ（任意） -->
+    <div id="overlay">ワールド座標に固定されたオレンジ球：position="1 1.5 -3"</div>
 
-    <!-- AR風。カメラ映像の上に3Dを重ねる（hit-test等は使わない） -->
-    <a-scene renderer="alpha: true; physicallyCorrectLights: true"
-             vr-mode-ui="enabled: false"
-             embedded>
-        <a-entity light="type: ambient; intensity: 1"></a-entity>
+    <!--
+      A-Frameシーン設定
+      - xr-mode-ui: 右下などに「Enter AR」ボタンを出す
+      - webxr: AR機能を有効化（optionalFeaturesは端末によって無視される場合あり）
+      - renderer: α透過（ARで実世界カメラが背景になる）
+      - vr-mode-ui: VRボタンは不要なので無効化
+    -->
+    <a-scene xr-mode-ui="enabled: true"
+             webxr="optionalFeatures: local-floor, dom-overlay; overlayElement: #overlay"
+             renderer="colorManagement: true; physicallyCorrectLights: true; alpha: true"
+             vr-mode-ui="enabled: false">
 
-        <!-- カメラ本体。位置はデバイスの実移動に追従、回転も端末姿勢に追従 -->
-        <a-entity id="rig">
-            <a-camera id="cam"></a-camera>
-        </a-entity>
+        <!--
+          カメラ。ユーザーの実世界の姿勢に同期。
+          - look-controls: 端末の姿勢センサーで回転する
+          - wasd-controls: キーボード移動は不要なので無効化
+          ※ エンティティはカメラの子にしないこと。子にすると常に視点に追従してしまい、
+             「ワールド固定」になりません。
+        -->
+        <a-entity camera look-controls wasd-controls-enabled="false"></a-entity>
 
-        <!-- 真北方向“のみ”に存在する球体（ワールド固定のつもりで扱う） -->
-        <!-- ※ 位置はJSで毎フレーム: 「カメラの現在位置 + 北方向ベクトル*d」へ更新 -->
-        <a-entity id="northSphere"
-                  geometry="primitive: sphere; radius: 0.14"
-                  material="color: #4fc3f7; metalness: 0.1; roughness: 0.4">
-        </a-entity>
+        <!-- 環境光＆方向光（球にほどよい陰影をつける） -->
+        <a-entity light="type: ambient; intensity: 0.6"></a-entity>
+        <a-entity light="type: directional; intensity: 0.8" position="0 4 2"></a-entity>
+
+        <!--
+          ★ オレンジ色の球体 ★
+          - position="1 1.5 -3" が「ワールド座標での任意の位置」
+            （ARセッション開始時の原点から x=+1m, y=+1.5m, z=-3m）
+          - color / emissive で鮮やかなオレンジに
+          - geometry で半径を調整
+          - このエンティティはワールドに固定され、ユーザーが歩く/向きを変えると
+            見える方向が変化します（＝その場に“浮いている”ように見える）
+        -->
+        <a-sphere position="1 1.5 -3"
+                  geometry="radius: 0.25; segmentsWidth: 32; segmentsHeight: 32"
+                  material="color: #FF7F00; emissive: #9E4A00; metalness: 0.1; roughness: 0.5">
+        </a-sphere>
+
     </a-scene>
 
-    <script>
-        // 目的：
-        // ・球体は「常に真北方向の d 先」に存在（世界に固定）させる
-        // ・ユーザーが北を向いた時だけ視界に入る（他の方角では見えない）
-        // 実装方針：
-        // 1) コンパスの見出し headingDeg(北=0°) を取得
-        // 2) そのベクトル N = (sin(-heading), 0, -cos(-heading)) を「ワールドの北向き」とみなす
-        // 3) 毎フレーム、カメラのワールド位置 C を取得し、球体位置 P = C + N * d に設定
-        //    → これで球体は常に「現在位置から見た真北 d m先」に“固定”される
-        // 4) 画面を向けていなければ視界外なので見えない。北を向くと見える
-
-        const startBtn = document.getElementById('start');
-        const camEl = document.getElementById('cam');
-        const sphereEl = document.getElementById('northSphere');
-
-        let headingDeg = null;   // コンパスの真方位（北=0°, 東=90°）
-        const distance = 2.0;    // 真北に固定する距離（m）
-        const heightOffset = 0.0;// 視点からの高さ差（m） 0で目線付近に固定
-
-        // --- センサー許可（iOS） ---
-        startBtn.addEventListener('click', async () => {
-            try {
-                if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    const state = await DeviceOrientationEvent.requestPermission();
-                    if (state !== 'granted') {
-                        alert('方位センサーの許可が必要です。設定から許可してください。');
-                        return;
-                    }
-                }
-            } catch (e) { /* Android等はそのまま続行 */ }
-            startCompass();
-            startBtn.style.display = 'none';
-        });
-
-        // iOS以外は自動開始を試みる
-        if (!(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function')) {
-            startCompass();
-            startBtn.style.display = 'none';
-        }
-
-        function startCompass() {
-            // 方位イベント購読（iOSは webkitCompassHeading が真方位のことが多い）
-            window.addEventListener('deviceorientation', (e) => {
-                let h = null;
-                if (typeof e.webkitCompassHeading === 'number') {
-                    h = e.webkitCompassHeading;     // 0..360, 北=0
-                } else if (typeof e.alpha === 'number') {
-                    // αは実装依存（多くはデバイス座標基準）。北基準へ近似的に変換
-                    h = 360 - e.alpha;              // ざっくり真方位に寄せる
-                }
-                if (h != null) headingDeg = ((h % 360) + 360) % 360;
-            }, { passive: true });
-
-            // 毎フレーム更新：球体を「カメラ位置 + 北ベクトル * d」に再配置
-            const update = () => {
-                if (headingDeg != null) {
-                    // 北ベクトル（カメラの回転には関わらず“地理的な北”に揃える）
-                    const rad = (-headingDeg) * Math.PI / 180;
-                    const nx = Math.sin(rad);
-                    const nz = -Math.cos(rad);
-
-                    // カメラの“ワールド位置”を取得
-                    const camObj = camEl.object3D;
-                    const camWorldPos = new THREE.Vector3();
-                    camObj.getWorldPosition(camWorldPos);
-
-                    // 球体の“ワールド位置”を決定（真北 d m 先 + 高さ補正）
-                    const px = camWorldPos.x + nx * distance;
-                    const py = camWorldPos.y + heightOffset;
-                    const pz = camWorldPos.z + nz * distance;
-
-                    sphereEl.object3D.position.set(px, py, pz);
-                }
-                requestAnimationFrame(update);
-            };
-            update();
-        }
-    </script>
+    <!--
+      補足：
+      - 「任意の位置」は position="x y z" を変更するだけでOK（単位はメートル）。
+      - 「常に視界の正面に出したい」場合は、シーン開始時にカメラの前方へ配置するなどの
+        スクリプトを追加しますが、本例は“ワールド固定”なので不要です。
+      - 端末がWebXRのARをサポートしていない場合は、別途 getUserMedia で
+        背景カメラを敷く“擬似AR”方式を使う必要があります（ご希望ならコード出します）。
+    -->
 </body>
 </html>
