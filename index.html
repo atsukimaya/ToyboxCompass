@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>A-Frame WebAR | 固定位置のオレンジ球</title>
+    <title>A-Frame WebAR | 複数モデルを個別計算で配置</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- A-Frame 本体 -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -19,9 +19,9 @@
             inset: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover; /* 画面いっぱいにトリミング */
-            z-index: 0; /* 一番背面 */
-            background: #b6ff00; /* カメラが出ない時の保険色 */
+            object-fit: cover;
+            z-index: 0;
+            background: #b6ff00;
         }
         /* A-Frameキャンバスを全画面に。背景α透過でカメラが透ける(WebXR AR) */
         a-scene {
@@ -46,58 +46,38 @@
     <!-- ▼擬似AR用：端末カメラ映像。WebXRに入ると裏に隠れたままでも問題なし -->
     <video id="bgcam" playsinline autoplay muted></video>
 
-    <!--
-      A-Frameシーン設定
-      - xr-mode-ui: 右下などに「Enter AR」ボタンを出す
-      - webxr: AR機能を有効化（optionalFeaturesは端末によって無視される場合あり）
-      - renderer: α透過（ARで実世界カメラが背景になる）
-      - vr-mode-ui: VRボタンは不要なので無効化
-    -->
     <a-scene xr-mode-ui="enabled: true"
              webxr="optionalFeatures: local-floor, dom-overlay; overlayElement: #overlay"
              renderer="colorManagement: true; physicallyCorrectLights: true; alpha: true"
              vr-mode-ui="enabled: false">
 
-        <!--
-      カメラ。ユーザーの実世界の姿勢に同期。
-      - look-controls: 端末の姿勢センサーで回転する
-      - wasd-controls: キーボード移動は不要なので無効化
-      ※ エンティティはカメラの子にしないこと。子にすると常に視点に追従してしまい、
-         「ワールド固定」になりません。
-    -->
+        <!-- ユーザーの視点カメラ（ワールド固定で置きたいので子要素は付けない） -->
         <a-entity camera look-controls wasd-controls-enabled="false"></a-entity>
 
-        <!-- 環境光＆方向光（球にほどよい陰影をつける） -->
+        <!-- 環境光＆方向光 -->
         <a-entity light="type: ambient; intensity: 0.6"></a-entity>
         <a-entity light="type: directional; intensity: 0.8" position="0 4 2"></a-entity>
 
-        <!--
-      ★ オレンジ色の球体 ★
-      - position="1 1.5 -3" が「ワールド座標での任意の位置」
-        （ARセッション開始時の原点から x=+1m, y=+1.5m, z=-3m）
-      - color / emissive で鮮やかなオレンジに
-      - geometry で半径を調整
-      - このエンティティはワールドに固定され、ユーザーが歩く/向きを変えると
-        見える方向が変化します（＝その場に“浮いている”ように見える）
-    -->
-        <a-sphere id="sun" position="1 1.5 -3"
-                  geometry="radius: 0.25; segmentsWidth: 32; segmentsHeight: 32"
-                  material="color: #FF7F00; emissive: #9E4A00; metalness: 0.1; roughness: 0.5">
-        </a-sphere>
-
-        <!--任意のモデルを入れる-->
-        <a-entity id="sunModel"
+        <!-- ▼オブジェクトたち（位置は script 内で計算して上書き） -->
+        <!-- 1) 太陽：球体 -->
+        <a-entity id="sun"
                   gltf-model="url(Duck.glb)"
-                  position="0 1 -2" scale="0.2 0.2 0.2">
-
+                  scale="0.2 0.2 0.2">
         </a-entity>
-        <a-entity id="sunModel" gltf-model="url(https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Duck/glTF-Binary/Duck.glb)"
-                  position="0 1 2" scale="0.2 0.2 0.2">
 
+        <!-- 2) 土星：ローカルの saturn.glb を同ディレクトリに置く -->
+        <a-entity id="saturn"
+                  gltf-model="url(saturn.glb)"
+                  scale="0.2 0.2 0.2">
+        </a-entity>
 
+        <!-- 3) サンタ -->
+        <a-entity id="santa"
+                  gltf-model="url(santa.glb)"
+                  scale="0.2 0.2 0.2">
+        </a-entity>
     </a-scene>
 
-  
     <script>
         // ------------------------------------------------------------
         // ▼擬似AR：背面カメラを背景に再生
@@ -105,63 +85,101 @@
         (async () => {
             const video = document.getElementById('bgcam');
             try {
-                // iOS/Safariでもなるべく背面カメラを使う
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
+                    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: false
                 });
                 video.srcObject = stream;
-
-
-                // 一部環境でautoplayが効かない場合があるため明示的にplay()
                 const play = video.play();
                 if (play && typeof play.catch === 'function') {
-                    play.catch(() => {
-                        // ユーザー操作後に play() すれば再生される想定
-                        console.warn('自動再生に失敗。画面をタップすると再生される場合があります。');
-                    });
+                    play.catch(() => console.warn('自動再生に失敗。画面をタップすると再生される場合があります。'));
                 }
             } catch (err) {
                 console.warn('カメラ取得に失敗:', err);
             }
         })();
 
-        // 太陽の高度と方位（度）
-        const altDeg = 45.7;
-        const azDeg = 236;
+        // ------------------------------------------------------------
+        // ▼複数モデルの「高度(°)・方位(°)・距離(m)」を個別に持たせる
+        //   - selector: 配置対象のエンティティ（id などの CSS セレクタ）
+        //   - altDeg : 地面からの角度（0°=水平, 90°=真上）
+        //   - azDeg  : 方位角（0°=北, 90°=東, 180°=南, 270°=西） ※天文でよく使う定義
+        //   - R      : 視点からの距離(m)
+        // ------------------------------------------------------------
+        const items = [
+            { selector: '#sun', altDeg: 27.7, azDeg: 256, R: 5 }, // 例: 太陽
+            { selector: '#saturn', altDeg: 50.6, azDeg: 162.9, R: 6 }, // 例: 土星
+            { selector: '#santa', altDeg: -33.1, azDeg: 336.5, R: 4 }, // 例: サンタ
+        ];
 
-        // ラジアンに変換
-        const alt = altDeg * Math.PI / 180;
-        const az = azDeg * Math.PI / 180;
+        // ------------------------------------------------------------
+        // ▼高度・方位・距離 → ENU(東=+X, 上=+Y, 北=+Z) のワールド座標へ変換
+        //   x = cos(alt) * sin(az) * R   (東)
+        //   y = sin(alt) * R             (上)
+        //   z = cos(alt) * cos(az) * R   (北)
+        // ------------------------------------------------------------
+        function altAzToPosition(altDeg, azDeg, R) {
+            const alt = altDeg * Math.PI / 180;
+            const az = azDeg * Math.PI / 180;
+            const x = Math.cos(alt) * Math.sin(az) * R; // East
+            const y = Math.sin(alt) * R;                // Up
+            const z = Math.cos(alt) * Math.cos(az) * R; // North
+            return { x, y, z };
+        }
 
-        // 表示する距離（例：5m先）
-        const R = 5;
+        // ------------------------------------------------------------
+        // ▼一括配置：items を回して position を設定
+        // ------------------------------------------------------------
+        function placeAll() {
+            for (const it of items) {
+                const el = document.querySelector(it.selector);
+                if (!el) { console.warn('要素が見つかりません:', it.selector); continue; }
+                const { x, y, z } = altAzToPosition(it.altDeg, it.azDeg, it.R);
+                el.setAttribute('position', `${x} ${y} ${z}`);
+                // デバッグログ
+                console.log(`[placed] ${it.selector}`, { altDeg: it.altDeg, azDeg: it.azDeg, R: it.R, x, y, z });
+            }
+        }
 
-        // 東(X), 上(Y), 北(Z) 成分を計算
-        const x = Math.cos(alt) * Math.sin(az) * R;
-        const y = Math.sin(alt) * R;
-        const z = Math.cos(alt) * Math.cos(az) * R;
+        // 初期配置（A-Frame が要素を初期化し終わった後に実行）
+        window.addEventListener('load', () => {
+            // シーンの準備ができてから配置を実行
+            const scene = document.querySelector('a-scene');
+            if (scene.hasLoaded) {
+                placeAll();
+            } else {
+                scene.addEventListener('loaded', placeAll, { once: true });
+            }
+        });
 
-        // 球体のpositionをセット
-        document.getElementById('sun').setAttribute('position', `${x} ${y} ${z}`);
-
-
-        console.log("太陽の位置", x, y, z);
+        // ------------------------------------------------------------
+        // ▼（任意）後から値を更新したい場合のユーティリティ
+        //   updateItem('#saturn', { altDeg: 10, azDeg: 210, R: 8 })
+        //   と呼べば、その要素だけ再配置されます。
+        // ------------------------------------------------------------
+        /*
+        function updateItem(selector, patch) {
+            const idx = items.findIndex(i => i.selector === selector);
+            if (idx === -1) { console.warn('items に登録されていません:', selector); return; }
+            items[idx] = { ...items[idx], ...patch };
+            const { x, y, z } = altAzToPosition(items[idx].altDeg, items[idx].azDeg, items[idx].R);
+            const el = document.querySelector(selector);
+            if (el) el.setAttribute('position', `${x} ${y} ${z}`);
+            console.log(`[updated] ${selector}`, items[idx], { x, y, z });
+        
+        }
+        */
+        // window に出してコンソールから触れるように（開発用）
+        window.updateItem = updateItem;
 
         // （任意）AR突入/離脱のログ
         /*
         const sceneEl = document.querySelector('a-scene');
         sceneEl.addEventListener('enter-vr', () => {
-            if (sceneEl.is('ar-mode')) console.log('WebXR ARモード開始');
+          if (sceneEl.is('ar-mode')) console.log('WebXR ARモード開始');
         });
         sceneEl.addEventListener('exit-vr', () => console.log('WebXR/VRモード終了'));
         */
-
-
     </script>
 </body>
 </html>
