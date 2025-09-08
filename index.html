@@ -59,12 +59,12 @@
              vr-mode-ui="enabled: false">
 
         <!--
-          カメラ。ユーザーの実世界の姿勢に同期。
-          - look-controls: 端末の姿勢センサーで回転する
-          - wasd-controls: キーボード移動は不要なので無効化
-          ※ エンティティはカメラの子にしないこと。子にすると常に視点に追従してしまい、
-             「ワールド固定」になりません。
-        -->
+      カメラ。ユーザーの実世界の姿勢に同期。
+      - look-controls: 端末の姿勢センサーで回転する
+      - wasd-controls: キーボード移動は不要なので無効化
+      ※ エンティティはカメラの子にしないこと。子にすると常に視点に追従してしまい、
+         「ワールド固定」になりません。
+    -->
         <a-entity camera look-controls wasd-controls-enabled="false"></a-entity>
 
         <!-- 環境光＆方向光（球にほどよい陰影をつける） -->
@@ -72,18 +72,26 @@
         <a-entity light="type: directional; intensity: 0.8" position="0 4 2"></a-entity>
 
         <!--
-          ★ オレンジ色の球体 ★
-          - position="1 1.5 -3" が「ワールド座標での任意の位置」
-            （ARセッション開始時の原点から x=+1m, y=+1.5m, z=-3m）
-          - color / emissive で鮮やかなオレンジに
-          - geometry で半径を調整
-          - このエンティティはワールドに固定され、ユーザーが歩く/向きを変えると
-            見える方向が変化します（＝その場に“浮いている”ように見える）
-        -->
+      ★ オレンジ色の球体 ★
+      - position="1 1.5 -3" が「ワールド座標での任意の位置」
+        （ARセッション開始時の原点から x=+1m, y=+1.5m, z=-3m）
+      - color / emissive で鮮やかなオレンジに
+      - geometry で半径を調整
+      - このエンティティはワールドに固定され、ユーザーが歩く/向きを変えると
+        見える方向が変化します（＝その場に“浮いている”ように見える）
+    -->
         <a-sphere id="sun" position="1 1.5 -3"
                   geometry="radius: 0.25; segmentsWidth: 32; segmentsHeight: 32"
                   material="color: #FF7F00; emissive: #9E4A00; metalness: 0.1; roughness: 0.5">
         </a-sphere>
+
+        <!--任意のモデルを入れる-->
+        <a-entity id="sunModel"
+                  gltf-model="url(https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Duck/glTF-Binary/Duck.glb)"
+                  position="0 1 -2" scale="0.2 0.2 0.2">
+
+        </a-entity>
+
 
     </a-scene>
 
@@ -137,8 +145,7 @@
         const z = Math.cos(alt) * Math.cos(az) * R;
 
         // 球体のpositionをセット
-        //document.getElementById('sun').setAttribute('position', `${x} ${y} ${z}`);
-        document.getElementById('sun').setAttribute('position', `${x} ${y} ${-3}`);
+        document.getElementById('sun').setAttribute('position', `${x} ${y} ${z}`);
 
 
         console.log("太陽の位置", x, y, z);
