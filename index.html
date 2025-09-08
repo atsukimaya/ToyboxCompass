@@ -43,8 +43,6 @@
     </style>
 </head>
 <body>
-    <!-- 画面上に重ねるメモ（任意） -->
-    <!--<div id="overlay">ワールド座標に固定されたオレンジ球：position="1 1.5 -3"</div>-->
     <!-- ▼擬似AR用：端末カメラ映像。WebXRに入ると裏に隠れたままでも問題なし -->
     <video id="bgcam" playsinline autoplay muted></video>
 
@@ -82,21 +80,14 @@
           - このエンティティはワールドに固定され、ユーザーが歩く/向きを変えると
             見える方向が変化します（＝その場に“浮いている”ように見える）
         -->
-        <a-sphere position="1 1.5 -3"
+        <a-sphere id="sun" position="1 1.5 -3"
                   geometry="radius: 0.25; segmentsWidth: 32; segmentsHeight: 32"
                   material="color: #FF7F00; emissive: #9E4A00; metalness: 0.1; roughness: 0.5">
         </a-sphere>
 
     </a-scene>
 
-    <!--
-      補足：
-      - 「任意の位置」は position="x y z" を変更するだけでOK（単位はメートル）。
-      - 「常に視界の正面に出したい」場合は、シーン開始時にカメラの前方へ配置するなどの
-        スクリプトを追加しますが、本例は“ワールド固定”なので不要です。
-      - 端末がWebXRのARをサポートしていない場合は、別途 getUserMedia で
-        背景カメラを敷く“擬似AR”方式を使う必要があります（ご希望ならコード出します）。
-    -->
+  
     <script>
         // ------------------------------------------------------------
         // ▼擬似AR：背面カメラを背景に再生
@@ -115,6 +106,7 @@
                 });
                 video.srcObject = stream;
 
+
                 // 一部環境でautoplayが効かない場合があるため明示的にplay()
                 const play = video.play();
                 if (play && typeof play.catch === 'function') {
@@ -128,12 +120,39 @@
             }
         })();
 
+        // 太陽の高度と方位（度）
+        const altDeg = 45.7;
+        const azDeg = 236;
+
+        // ラジアンに変換
+        const alt = altDeg * Math.PI / 180;
+        const az = azDeg * Math.PI / 180;
+
+        // 表示する距離（例：5m先）
+        const R = 5;
+
+        // 東(X), 上(Y), 北(Z) 成分を計算
+        const x = Math.cos(alt) * Math.sin(az) * R;
+        const y = Math.sin(alt) * R;
+        const z = Math.cos(alt) * Math.cos(az) * R;
+
+        // 球体のpositionをセット
+        //document.getElementById('sun').setAttribute('position', `${x} ${y} ${z}`);
+        document.getElementById('sun').setAttribute('position', `${x} ${y} ${-3}`);
+
+
+        console.log("太陽の位置", x, y, z);
+
         // （任意）AR突入/離脱のログ
+        /*
         const sceneEl = document.querySelector('a-scene');
         sceneEl.addEventListener('enter-vr', () => {
             if (sceneEl.is('ar-mode')) console.log('WebXR ARモード開始');
         });
         sceneEl.addEventListener('exit-vr', () => console.log('WebXR/VRモード終了'));
+        */
+
+
     </script>
 </body>
 </html>
