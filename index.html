@@ -2,63 +2,44 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>カメラ背景に球体を配置（iPhone対応）</title>
+    <title>太陽の位置に球体を配置</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #000;
-            overflow: hidden;
-        }
-        /* カメラ背景用のビデオ */
-        #bgcam {
-            position: fixed;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: 0;
-        }
-        /* A-Frameのキャンバスは前面に */
-        a-scene {
-            position: fixed;
-            inset: 0;
-            z-index: 1;
-        }
-    </style>
 </head>
-<body>
-    <!-- 背景カメラ映像 -->
-    <video id="bgcam" autoplay playsinline muted></video>
+<body style="margin:0;">
 
-    <!-- A-Frameシーン -->
     <a-scene renderer="alpha:true" embedded>
-        <!-- カメラ（3D空間の視点） -->
+        <!-- カメラ -->
         <a-entity camera wasd-controls="enabled:false"></a-entity>
 
-        <!-- 適当な位置に球体を配置 -->
-        <a-sphere position="0 1 -2" radius="0.3" color="#44ccff"
-                  material="emissive:#22aaff; emissiveIntensity:0.6"></a-sphere>
+        <!-- 太陽の位置に置く球体（JSでpositionを計算して設定する） -->
+        <a-sphere id="sun" radius="0.3" color="#ffaa00"
+                  material="emissive:#ff8800; emissiveIntensity:0.7"></a-sphere>
 
-        <!-- 簡単なライト -->
-        <a-entity light="type:ambient; intensity:0.8"></a-entity>
+        <a-entity light="type:ambient; intensity:0.7"></a-entity>
     </a-scene>
 
     <script>
-        // カメラ起動（iPhone Safari/Chromeでも動作する）
-        (async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: "environment" } }, audio: false
-                });
-                document.getElementById('bgcam').srcObject = stream;
-            } catch (e) {
-                alert("カメラが起動できません: " + e.message);
-            }
-        })();
+        // 太陽の高度と方位（度）
+        const altDeg = 45.7;
+        const azDeg = 236;
+
+        // ラジアンに変換
+        const alt = altDeg * Math.PI / 180;
+        const az = azDeg * Math.PI / 180;
+
+        // 表示する距離（例：5m先）
+        const R = 5;
+
+        // 東(X), 上(Y), 北(Z) 成分を計算
+        const x = Math.cos(alt) * Math.sin(az) * R;
+        const y = Math.sin(alt) * R;
+        const z = Math.cos(alt) * Math.cos(az) * R;
+
+        // 球体のpositionをセット
+        document.getElementById('sun')
+            .setAttribute('position', `${x} ${y} ${z}`);
     </script>
+
 </body>
 </html>
