@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Webコンパス</title>
+  <style>
+    html,body{margin:0;height:100%;font-family:-apple-system,system-ui,Segoe UI,Roboto}
+    .wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px}
+    .dial{width:260px;height:260px;border:2px solid #aaa;border-radius:50%;position:relative}
+    .needle{position:absolute;left:50%;top:50%;width:4px;height:120px;background:#e11;transform-origin:50% 90%;border-radius:2px}
+    .center{position:absolute;left:50%;top:50%;width:14px;height:14px;background:#333;border-radius:50%;transform:translate(-50%,-50%)}
+    .card{padding:12px 16px;border:1px solid #ddd;border-radius:12px}
+    button{padding:10px 16px;border-radius:10px;border:1px solid #333;background:#fff}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div>方位: <span id="deg">--</span>°（0°=北）</div>
+    </div>
+    <div class="dial">
+      <div class="needle" id="needle" style="transform:translate(-50%,-100%) rotate(0deg)"></div>
+      <div class="center"></div>
+    </div>
+    <button id="permBtn">センサー許可</button>
+    <div class="card" style="font-size:12px;color:#555">
+      iPhoneは初回に「動きと向き」へのアクセス許可が必要です（ボタンをタップ）
+    </div>
+  </div>
+
+  <script>
+    const degEl = document.getElementById('deg');
+    const needle = document.getElementById('needle');
+    const btn = document.getElementById('permBtn');
+
+    async function requestPermissionIfNeeded() {
+      // iOS Safari（13+）向け: ユーザー操作で許可をリクエスト
+      const DME = window.DeviceMotionEvent;
+      const DOE = window.DeviceOrientationEvent;
+      if (DOE && typeof DOE.requestPermission === 'function') {
+        try { await DOE.requestPermission(); } catch(e){}
+      }
+      if (DME && typeof DME.requestPermission === 'function') {
+        try { await DME.requestPermission(); } catch(e){}
+      }
+    }
+
+    function startCompass() {
+      // iOSは deviceorientation で alpha が得られる（端末差あり）
+      window.addEventListener('deviceorientation', (ev) => {
+        let alpha = ev.alpha; // 0=北（おおむね）
+        if (alpha == null) return;
+        // 針は北を指す: 画面上の針を -alpha 回転させる
+        needle.style.transform = `translate(-50%,-100%) rotate(${-alpha}deg)`;
+        degEl.textContent = alpha.toFixed(0);
+      }, true);
+    }
+
+    btn.addEventListener('click', async () => {
+      await requestPermissionIfNeeded();
+      startCompass();
+      btn.textContent = '許可済み';
+      btn.disabled = true;
+    });
+  </script>
+</body>
+</html>
