@@ -21,7 +21,7 @@
             height: 100%;
             object-fit: cover;
             z-index: 0;
-            background: #b6ff00;
+            background: #000;
         }
         /* A-Frameキャンバスを全画面に。背景α透過でカメラが透ける(WebXR AR) */
         a-scene {
@@ -55,13 +55,15 @@
         <a-entity camera look-controls wasd-controls-enabled="false"></a-entity>
 
         <!-- 環境光＆方向光 -->
-        <a-entity light="type: ambient; intensity: 0.6"></a-entity>
-        <a-entity light="type: directional; intensity: 0.8" position="0 4 2"></a-entity>
+        <a-entity light="type: ambient; intensity: 2.5"></a-entity>
+        <!--<a-entity light="type: directional; intensiy: 0.8" position="0 4 2"></a-entity>?-->
+        <a-entity light="type: directional; intensity: 1.0" position="2 4 2"></a-entity>
+        <a-entity light="type: directional; intensity: 0.6" position="-2 3 -2"></a-entity>
 
         <!-- ▼オブジェクトたち（位置は script 内で計算して上書き） -->
         <!-- 1) 太陽：球体 -->
         <a-entity id="sun"
-                  gltf-model="url(Duck.glb)"
+                  gltf-model="url(sun.glb)"
                   scale="0.2 0.2 0.2" face-camera>
         </a-entity>
 
@@ -73,8 +75,9 @@
 
         <!-- 3) サンタ -->
         <a-entity id="santa"
-                  gltf-model="url(santa.glb)"
-                  scale="0.2 0.2 0.2" face-camera>
+                  gltf-model="url(Low_Poly_Santa_Claus2.glb)"
+                  scale="0.3 0.3 0.3"
+                  face-camera>
         </a-entity>
     </a-scene>
 
@@ -109,7 +112,7 @@
         const items = [
             { selector: '#sun', altDeg: 27.7, azDeg: 256, R: 5 }, // 例: 太陽
             { selector: '#saturn', altDeg: 50.6, azDeg: 162.9, R: 6 }, // 例: 土星
-            { selector: '#santa', altDeg: -33.1, azDeg: 336.5, R: 4 }, // 例: サンタ
+            { selector: '#santa', altDeg: -33.1, azDeg: 336.5, R: 4 }, // 例: サンタ 実際はaltDeg: -33.1, azDeg: 336.5
         ];
 
         // ------------------------------------------------------------
@@ -143,13 +146,13 @@
 
         // 3Dオブジェクトがカメラを向く
         AFRAME.registerComponent('face-camera', {
-            tick: function () {
-                const obj = this.el.object3D;
-                const cam = this.el.sceneEl.camera;
-                if (cam) {
-                    obj.lookAt(cam.position); // カメラ位置を常に向く
-                }
-            }
+            //tick: function () {
+            //    const obj = this.el.object3D;
+            //    const cam = this.el.sceneEl.camera;
+            //    if (cam) {
+            //        obj.lookAt(cam.position); // カメラ位置を常に向く
+            //    }
+            //}
         });
 
 
