@@ -62,19 +62,19 @@
         <!-- 1) 太陽：球体 -->
         <a-entity id="sun"
                   gltf-model="url(Duck.glb)"
-                  scale="0.2 0.2 0.2">
+                  scale="0.2 0.2 0.2" face-camera>
         </a-entity>
 
         <!-- 2) 土星：ローカルの saturn.glb を同ディレクトリに置く -->
         <a-entity id="saturn"
                   gltf-model="url(saturn.glb)"
-                  scale="0.2 0.2 0.2">
+                  scale="0.2 0.2 0.2" face-camera>
         </a-entity>
 
         <!-- 3) サンタ -->
         <a-entity id="santa"
                   gltf-model="url(santa.glb)"
-                  scale="0.2 0.2 0.2">
+                  scale="0.2 0.2 0.2" face-camera>
         </a-entity>
     </a-scene>
 
@@ -141,6 +141,18 @@
             }
         }
 
+        // 3Dオブジェクトがカメラを向く
+        AFRAME.registerComponent('face-camera', {
+            tick: function () {
+                const obj = this.el.object3D;
+                const cam = this.el.sceneEl.camera;
+                if (cam) {
+                    obj.lookAt(cam.position); // カメラ位置を常に向く
+                }
+            }
+        });
+
+
         // 初期配置（A-Frame が要素を初期化し終わった後に実行）
         window.addEventListener('load', () => {
             // シーンの準備ができてから配置を実行
@@ -170,7 +182,7 @@
         }
         */
         // window に出してコンソールから触れるように（開発用）
-        window.updateItem = updateItem;
+        //window.updateItem = updateItem;
 
         // （任意）AR突入/離脱のログ
         /*
