@@ -1,70 +1,25 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="utf-8" />
-    <title>A-Frame AR: 球体をカメラ映像に重ねる</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <title>A-Frame カメラ起動テスト</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- A-Frame 本体 -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #000;
-        }
-
-        #overlay {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            justify-content: center;
-            padding: 8px;
-            pointer-events: none;
-        }
-
-        .note {
-            position: fixed;
-            left: 50%;
-            top: 10px;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,.45);
-            color: #fff;
-            padding: 6px 10px;
-            border-radius: 10px;
-            font-size: 12px;
-            backdrop-filter: blur(6px);
-        }
-    </style>
 </head>
 <body>
-    <div class="note">「ARで表示」をタップして開始（Android Chrome／HTTPS）</div>
-    <div id="overlay"></div>
-
     <!--
-      A-FrameシーンをARモードで起動。
-      - webxr="mode: ar" でネイティブAR
-      - dom-overlay を有効化すると上の #overlay にHTMLを重ねられる（任意）
+      A-FrameシーンをARモードで起動する。
+      → 起動すると「ARで表示」ボタンが出るのでタップ。
+      → 背景に端末のカメラ映像が表示される。
     -->
-    <a-scene renderer="alpha:true; physicallyCorrectLights:true; colorManagement:true"
-             vr-mode-ui="enabled:false"
-             embedded
-             webxr="mode: ar; optionalFeatures: hit-test, dom-overlay; overlayElement: #overlay">
-        <!-- カメラ（ユーザー操作は不要、AR起動で自動的に端末カメラに切替） -->
-        <a-entity camera wasd-controls="enabled:false"></a-entity>
-
-        <!-- ライト（見やすさ用。必要最低限） -->
-        <a-entity light="type: ambient; intensity: 0.7"></a-entity>
-        <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
-
-        <!-- 球体（カメラ正面に固定距離で配置。zがマイナスで前方） -->
-        <a-sphere id="ball"
-                  position="0 0 -1.5"            <!-- カメラの1.5m前 -->
-      radius="0.2"                   <!-- 直径40cm程度 -->
-      color="#ff6666"
-      material="emissive:#ff4444; emissiveIntensity:0.6; roughness:1; metalness:0">
-    </a-sphere>
-    </a-scene>
+    <a-scene renderer="alpha:true"       <!-- 背景を透過（カメラ映像が見えるように） -->
+    vr-mode-ui="enabled:false"  <!-- VRボタンを消す -->
+    embedded
+    webxr="mode: ar"            <!-- WebXRをARモードで -->
+  >
+    <!-- カメラ（必須） -->
+    <a-entity camera wasd-controls="enabled:false"></a-entity>
+  </a-scene>
 </body>
 </html>
