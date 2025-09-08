@@ -13,6 +13,16 @@
             background: transparent;
             overflow: hidden;
         }
+        /* ▼擬似AR用のビデオ（WebXR非対応 or 未突入時の背景） */
+        #bgcam {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 画面いっぱいにトリミング */
+            z-index: 0; /* 一番背面 */
+            background: #b6ff00; /* カメラが出ない時の保険色 */
+        }
         /* A-Frameキャンバスを全画面に。背景α透過でカメラが透ける(WebXR AR) */
         a-scene {
             position: fixed;
@@ -34,7 +44,9 @@
 </head>
 <body>
     <!-- 画面上に重ねるメモ（任意） -->
-    <div id="overlay">ワールド座標に固定されたオレンジ球：position="1 1.5 -3"</div>
+    <!--<div id="overlay">ワールド座標に固定されたオレンジ球：position="1 1.5 -3"</div>-->
+    <!-- ▼擬似AR用：端末カメラ映像。WebXRに入ると裏に隠れたままでも問題なし -->
+    <video id="bgcam" playsinline autoplay muted></video>
 
     <!--
       A-Frameシーン設定
@@ -85,5 +97,43 @@
       - 端末がWebXRのARをサポートしていない場合は、別途 getUserMedia で
         背景カメラを敷く“擬似AR”方式を使う必要があります（ご希望ならコード出します）。
     -->
+    <script>
+        // ------------------------------------------------------------
+        // ▼擬似AR：背面カメラを背景に再生
+        // ------------------------------------------------------------
+        (async () => {
+            const video = document.getElementById('bgcam');
+            try {
+                // iOS/Safariでもなるべく背面カメラを使う
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+
+                // 一部環境でautoplayが効かない場合があるため明示的にplay()
+                const play = video.play();
+                if (play && typeof play.catch === 'function') {
+                    play.catch(() => {
+                        // ユーザー操作後に play() すれば再生される想定
+                        console.warn('自動再生に失敗。画面をタップすると再生される場合があります。');
+                    });
+                }
+            } catch (err) {
+                console.warn('カメラ取得に失敗:', err);
+            }
+        })();
+
+        // （任意）AR突入/離脱のログ
+        const sceneEl = document.querySelector('a-scene');
+        sceneEl.addEventListener('enter-vr', () => {
+            if (sceneEl.is('ar-mode')) console.log('WebXR ARモード開始');
+        });
+        sceneEl.addEventListener('exit-vr', () => console.log('WebXR/VRモード終了'));
+    </script>
 </body>
 </html>
