@@ -1,25 +1,30 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="utf-8">
-    <title>A-Frame カメラ起動テスト</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- A-Frame 本体 -->
+    <meta charset="utf-8" />
+    <title>A-Frame + AR.js（iPhone Chrome対応）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <!-- AR.js for A-Frame -->
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>
 </head>
 <body>
-    <!--
-      A-FrameシーンをARモードで起動する。
-      → 起動すると「ARで表示」ボタンが出るのでタップ。
-      → 背景に端末のカメラ映像が表示される。
-    -->
-    <a-scene renderer="alpha:true"       <!-- 背景を透過（カメラ映像が見えるように） -->
-    vr-mode-ui="enabled:false"  <!-- VRボタンを消す -->
-    embedded
-    webxr="mode: ar"            <!-- WebXRをARモードで -->
-  >
-    <!-- カメラ（必須） -->
-    <a-entity camera wasd-controls="enabled:false"></a-entity>
-  </a-scene>
+    <!-- arjs を付けると iPhone Chrome でもカメラが起動 -->
+    <a-scene embedded arjs>
+        <!-- hiro マーカー上に赤い箱を表示 -->
+        <a-marker preset="hiro">
+            <a-box position="0 0.5 0" material="color: red;"></a-box>
+        </a-marker>
+        <!-- カメラ（AR.jsが制御） -->
+        <a-entity camera></a-entity>
+    </a-scene>
 </body>
 </html>
